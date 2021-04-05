@@ -1,2 +1,0 @@
-# gTalk
-## Scheduling by Go

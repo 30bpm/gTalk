@@ -16,5 +16,8 @@ func SetupRouter() *http.ServeMux {
 	mux.HandleFunc("/notice/", middleware.Timer(controller.NoticeMessage))
 	fmt.Println("[POST]\t/notice/")
 
+	mux.HandleFunc("/test/", middleware.Timer(controller.TestTicker))
+	fmt.Println("[GET]\t/test/")
+
 	return mux
 }

@@ -5,8 +5,13 @@ import (
 	"log"
 	"net/http"
 
+	"github.com/groomer/gTalk/db"
 	"github.com/groomer/gTalk/router"
 )
+
+func init() {
+	db.Connect()
+}
 
 func main() {
 	mux := router.SetupRouter()
