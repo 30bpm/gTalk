@@ -1,6 +1,6 @@
 version: "3"
 services: 
-  proxy:
+  nginx:
     image: nginx:latest
     container_name: nginx
     ports: 
@@ -8,12 +8,14 @@ services:
     volumes: 
       - ./config/nginx.conf:/etc/nginx/nginx.conf
     restart: "unless-stopped"
-  groomer_talk:
+  groomer_talk_1:
     image: zzzinho/groomer_talk:latest
-    container_name: groomer_talk
+    container_name: groomer_talk_1
     expose: 
       - "3000"
     volumes: 
-      - /src/groomer_talk:/src
+      - /src/groomer_talk_1:/src
       - /src/node_modules
+    environment:
+      - TZ=Asia/Seoul
     restart: "unless-stopped"

@@ -8,6 +8,7 @@ import (
 	"log"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/groomer/gTalk/config"
@@ -106,7 +107,10 @@ func NoticeMessage(w http.ResponseWriter, r *http.Request) {
 	message.Date = msg.Date
 	message.Time = msg.Time
 	message.Done = true
+	message.Text = Text
 	db.DB.Create(&message)
+
+	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(map[string]string{"msg": "success"})
 }
 func Boom(s string) {
@@ -123,9 +127,34 @@ func Boom(s string) {
 	}
 }
 
-func Reminder(URL string, data []byte, hour int, minute int) bool {
+func Reminder(message db.Message) bool {
+	HM := strings.Split(message.Time, ":")
+	now := time.Now()
+	hour, _ := strconv.Atoi(HM[0])
+	hour = hour - now.Hour()
+	minute, _ := strconv.Atoi(HM[1])
+	minute = minute - now.Minute()
+
+	if minute < 0 && hour > 0 {
+		hour -= 1
+		minute += 60
+	}
+
+	if minute < 0 || hour < 0 {
+		return false
+	}
+
+	fmt.Println("hour: ", hour, "minute: ", minute)
 	time.Sleep(time.Duration(hour)*time.Hour + time.Duration(minute)*time.Minute)
-	req, err := http.NewRequest("POST", URL, bytes.NewBuffer(data))
+
+	URL := "/request/kakao.json"
+	data, _ := json.Marshal(map[string]string{
+		"service":  strconv.Itoa(config.MESSAGE_NOTICE_SERVICE_NUMBER),
+		"message":  message.Text,
+		"mobile":   message.Phone,
+		"template": message.Template,
+	})
+	req, err := http.NewRequest("POST", config.MESSAGE_API_URL+URL, bytes.NewBuffer(data))
 	if err != nil {
 		log.Println(err)
 		return false
@@ -162,53 +191,14 @@ func Reminder(URL string, data []byte, hour int, minute int) bool {
 	return true
 }
 
-func TestTicker(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		w.WriteHeader(http.StatusMethodNotAllowed)
-		fmt.Fprintf(w, "invalid_http_method")
-		return
+func GetReminders() bool {
+	var messages []db.Message
+	date := time.Now().Format("2006-01-02")
+	db.DB.Where("date = ?", date).Find(&messages)
+	fmt.Println("len: ", len(messages))
+	for _, message := range messages {
+		fmt.Println(message.Date, message.Time)
+		go Reminder(message)
 	}
-	var msg RequestMessageForm
-
-	if err := json.NewDecoder(r.Body).Decode(&msg); err != nil {
-		log.Println(err)
-		return
-	}
-
-	Message := fmt.Sprintf("안녕하세요 %s님 예약해주셔서 감사합니다 ^_^\n\n%s님께서 예약해주신 미용은\n%s %s에 진행될 예정입니다.\n\n%s에 중요한 내용이 들어있으니 꼭 읽어주세요😎\n그럼 늦지않게 %s %s에 뵙겠습니다\n\n추운 날 감기 조심하세요~❣\n",
-		msg.Customer,
-		msg.Customer,
-		msg.Date,
-		msg.Time,
-		msg.Notice,
-		msg.Date,
-		msg.Time)
-
-	URL := config.MESSAGE_API_URL + "/request/kakao.json"
-	data, _ := json.Marshal(map[string]string{
-		"service":  strconv.Itoa(config.MESSAGE_NOTICE_SERVICE_NUMBER),
-		"message":  Message,
-		"mobile":   msg.Phone,
-		"template": "10001",
-	})
-	date, _ := time.Parse(time.RFC3339, msg.Date+"T"+msg.Time+":00Z")
-	now := time.Now()
-	fmt.Println(date.Local())
-	fmt.Println(now)
-	if date.After(now) {
-		fmt.Println("after")
-	} else {
-		fmt.Println("before")
-	}
-	hour := date.Hour() - now.Hour()
-	minute := date.Minute() - now.Minute()
-	if minute < 0 {
-		hour -= 1
-		minute += 60
-	}
-	fmt.Println(hour, minute)
-
-	go Reminder(URL, data, hour, minute)
-
-	json.NewEncoder(w).Encode(map[string]string{"msg": "success"})
+	return true
 }

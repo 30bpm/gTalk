@@ -11,5 +11,6 @@ type Message struct {
 	Salon    uint64 `gorm:"not null"`
 	Date     string `gorm:"type:varchar(16);not null"`
 	Time     string `gorm:"type:varchar(16);not null"`
+	Text     string `gorm:"type:varchar(512)"`
 	Done     bool   `gorm:"default:false"`
 }

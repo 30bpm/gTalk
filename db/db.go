@@ -17,7 +17,8 @@ func Connect() {
 		fmt.Println(err)
 		return
 	}
-	db.Migrator().DropTable(&Message{})
-	db.Migrator().CreateTable(&Message{})
+	// db.AutoMigrate(&Message{})
+	// db.Migrator().DropTable(&Message{})
+	// db.Migrator().CreateTable(&Message{})
 	DB = db
 }
