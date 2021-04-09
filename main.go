@@ -16,12 +16,15 @@ func Ticker24Hour() {
 	quit := make(chan struct{})
 
 	go func() {
-		select {
-		case <-ticker.C:
-			controller.GetReminders()
-		case <-quit:
-			ticker.Stop()
-			return
+		for {
+			select {
+			case <-ticker.C:
+				controller.GetReminders()
+			case <-quit:
+				fmt.Println("24 hour ticker stop")
+				ticker.Stop()
+				return
+			}
 		}
 	}()
 }
@@ -31,7 +34,6 @@ func init() {
 	controller.GetReminders()
 
 	now := time.Now()
-	fmt.Println("now: ", now)
 	hour := (23 - now.Hour()) % 24
 	minute := (60 - now.Minute())
 	if minute == 60 {
@@ -40,13 +42,13 @@ func init() {
 	} else {
 		minute %= 60
 	}
-	fmt.Println("until midnight: ", hour, minute)
+
 	everyMidnight := time.NewTicker(time.Duration(hour)*time.Hour + time.Duration(minute)*time.Minute)
 	go func() {
 		for {
 			select {
 			case <-everyMidnight.C:
-				Ticker24Hour()
+				go Ticker24Hour()
 				return
 			}
 		}

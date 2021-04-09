@@ -127,7 +127,7 @@ func Boom(s string) {
 	}
 }
 
-func Reminder(message db.Message) bool {
+func Reminder(message *db.Message) bool {
 	HM := strings.Split(message.Time, ":")
 	now := time.Now()
 	hour, _ := strconv.Atoi(HM[0])
@@ -135,6 +135,11 @@ func Reminder(message db.Message) bool {
 	minute, _ := strconv.Atoi(HM[1])
 	minute = minute - now.Minute()
 
+	date, _ := time.Parse("2006-01-02", message.Date)
+	nowDate, _ := time.Parse("2006-01-02", now.Format("2006-01-02"))
+	if !(date.Year() == nowDate.Year() && date.Month() == nowDate.Month() && date.Day() == nowDate.Day()) {
+		return true
+	}
 	if minute < 0 && hour > 0 {
 		hour -= 1
 		minute += 60
@@ -188,17 +193,61 @@ func Reminder(message db.Message) bool {
 	if resp.Status != "OK" {
 		return false
 	}
+	if message.Done == false {
+		message.Done = true
+		db.DB.Save(&message)
+	}
+
 	return true
 }
 
 func GetReminders() bool {
+	fmt.Println("get reminders time: ", time.Now())
 	var messages []db.Message
 	date := time.Now().Format("2006-01-02")
 	db.DB.Where("date = ?", date).Find(&messages)
+	fmt.Println("time: ", time.Now())
 	fmt.Println("len: ", len(messages))
 	for _, message := range messages {
 		fmt.Println(message.Date, message.Time)
-		go Reminder(message)
+		go Reminder(&message)
 	}
 	return true
+}
+
+func PostReminder(writer http.ResponseWriter, request *http.Request) {
+	if request.Method != http.MethodPost {
+		writer.WriteHeader(http.StatusMethodNotAllowed)
+		fmt.Fprintf(writer, "invalid_http_method")
+		return
+	}
+	var msg RequestMessageForm
+
+	if err := json.NewDecoder(request.Body).Decode(&msg); err != nil {
+		log.Println(err)
+		return
+	}
+
+	Text := fmt.Sprintf("안녕하세요 %s님 예약해주셔서 감사합니다 ^_^\n\n%s님께서 예약해주신 미용은\n%s %s에 진행될 예정입니다.\n\n%s에 중요한 내용이 들어있으니 꼭 읽어주세요😎\n그럼 늦지않게 %s %s에 뵙겠습니다\n\n추운 날 감기 조심하세요~❣\n",
+		msg.Customer,
+		msg.Customer,
+		msg.Date,
+		msg.Time,
+		msg.Notice,
+		msg.Date,
+		msg.Time)
+
+	var message db.Message
+	message.Phone = msg.Phone
+	message.Template = msg.Template
+	message.Salon = msg.Salon
+	message.Date = msg.Date
+	message.Time = msg.Time
+	message.Text = Text
+	message.Done = false
+	db.DB.Create(&message)
+
+	go Reminder(&message)
+	writer.WriteHeader(http.StatusOK)
+	json.NewEncoder(writer).Encode(map[string]string{"msg": "success"})
 }
