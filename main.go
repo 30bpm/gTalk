@@ -31,6 +31,7 @@ func Ticker24Hour() {
 
 func init() {
 	db.Connect()
+	controller.MessageStopper = make(map[uint](chan bool))
 	controller.GetReminders()
 
 	now := time.Now()

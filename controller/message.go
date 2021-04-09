@@ -150,55 +150,70 @@ func Reminder(message *db.Message) bool {
 	}
 
 	fmt.Println("hour: ", hour, "minute: ", minute)
-	time.Sleep(time.Duration(hour)*time.Hour + time.Duration(minute)*time.Minute)
+	ticker := time.NewTicker(time.Duration(hour)*time.Hour + time.Duration(minute)*time.Minute)
+	MessageStopper[message.ID] = make(chan bool)
+	fmt.Println(message.ID)
+	for {
+		select {
+		case <-ticker.C:
+			fmt.Println("send")
 
-	URL := "/request/kakao.json"
-	data, _ := json.Marshal(map[string]string{
-		"service":  strconv.Itoa(config.MESSAGE_NOTICE_SERVICE_NUMBER),
-		"message":  message.Text,
-		"mobile":   message.Phone,
-		"template": message.Template,
-	})
-	req, err := http.NewRequest("POST", config.MESSAGE_API_URL+URL, bytes.NewBuffer(data))
-	if err != nil {
-		log.Println(err)
-		return false
+			URL := "/request/kakao.json"
+			data, _ := json.Marshal(map[string]string{
+				"service":  strconv.Itoa(config.MESSAGE_NOTICE_SERVICE_NUMBER),
+				"message":  message.Text,
+				"mobile":   message.Phone,
+				"template": message.Template,
+			})
+			req, err := http.NewRequest("POST", config.MESSAGE_API_URL+URL, bytes.NewBuffer(data))
+			if err != nil {
+				log.Println(err)
+				return false
+			}
+			timeout := time.Duration(5 * time.Second)
+			client := http.Client{Timeout: timeout}
+
+			req.Header.Set("authToken", config.MESSAGE_API_KEY)
+			req.Header.Set("serverName", config.MESSAGE_API_ID)
+			req.Header.Set("paymentType", "P")
+
+			msg_response, err := client.Do(req)
+			if err != nil {
+				log.Println(err)
+				return false
+			}
+
+			defer msg_response.Body.Close()
+
+			body, err := ioutil.ReadAll(msg_response.Body)
+			if err != nil {
+				log.Println(err)
+				return false
+			}
+
+			var resp MsgResponse
+			if err := json.Unmarshal(body, &resp); err != nil {
+				log.Println(err)
+				return false
+			}
+			if resp.Status != "OK" {
+				return false
+			}
+			if message.Done == false {
+				message.Done = true
+				db.DB.Save(&message)
+			}
+
+			return true
+		case <-MessageStopper[message.ID]:
+			fmt.Println("map: ", MessageStopper)
+			fmt.Println("[Log] ", message.ID, "stopped")
+			close(MessageStopper[message.ID])
+			delete(MessageStopper, message.ID)
+			fmt.Println("map: ", MessageStopper)
+			return false
+		}
 	}
-	timeout := time.Duration(5 * time.Second)
-	client := http.Client{Timeout: timeout}
-
-	req.Header.Set("authToken", config.MESSAGE_API_KEY)
-	req.Header.Set("serverName", config.MESSAGE_API_ID)
-	req.Header.Set("paymentType", "P")
-
-	msg_response, err := client.Do(req)
-	if err != nil {
-		log.Println(err)
-		return false
-	}
-
-	defer msg_response.Body.Close()
-
-	body, err := ioutil.ReadAll(msg_response.Body)
-	if err != nil {
-		log.Println(err)
-		return false
-	}
-
-	var resp MsgResponse
-	if err := json.Unmarshal(body, &resp); err != nil {
-		log.Println(err)
-		return false
-	}
-	if resp.Status != "OK" {
-		return false
-	}
-	if message.Done == false {
-		message.Done = true
-		db.DB.Save(&message)
-	}
-
-	return true
 }
 
 func GetReminders() bool {
@@ -249,5 +264,26 @@ func PostReminder(writer http.ResponseWriter, request *http.Request) {
 
 	go Reminder(&message)
 	writer.WriteHeader(http.StatusOK)
+	json.NewEncoder(writer).Encode(map[string]string{"msg": "success"})
+}
+
+type MessageID struct {
+	ID uint `jons:"id"`
+}
+
+func DeleteReminder(writer http.ResponseWriter, request *http.Request) {
+	if request.Method != http.MethodPost {
+		writer.WriteHeader(http.StatusMethodNotAllowed)
+		fmt.Fprintf(writer, "invalid_http_method")
+		return
+	}
+	var messageID MessageID
+
+	if err := json.NewDecoder(request.Body).Decode(&messageID); err != nil {
+		log.Println(err)
+		return
+	}
+	MessageStopper[messageID.ID] <- true
+
 	json.NewEncoder(writer).Encode(map[string]string{"msg": "success"})
 }
