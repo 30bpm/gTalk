@@ -127,7 +127,7 @@ func Boom(s string) {
 	}
 }
 
-func Reminder(message *db.Message) bool {
+func Reminder(message db.Message) bool {
 	HM := strings.Split(message.Time, ":")
 	now := time.Now()
 	hour, _ := strconv.Atoi(HM[0])
@@ -149,10 +149,16 @@ func Reminder(message *db.Message) bool {
 		return false
 	}
 
-	fmt.Println("hour: ", hour, "minute: ", minute)
-	ticker := time.NewTicker(time.Duration(hour)*time.Hour + time.Duration(minute)*time.Minute)
+	var duration time.Duration
+	if hour == 0 && minute == 0 {
+		duration = 1 * time.Minute
+	} else {
+		duration = time.Duration(hour)*time.Hour + time.Duration(minute)*time.Minute
+	}
+
+	ticker := time.NewTicker(duration)
 	MessageStopper[message.ID] = make(chan bool)
-	fmt.Println(message.ID)
+	fmt.Println(message.ID, time.Now().Add(duration))
 	for {
 		select {
 		case <-ticker.C:
@@ -224,8 +230,8 @@ func GetReminders() bool {
 	fmt.Println("time: ", time.Now())
 	fmt.Println("len: ", len(messages))
 	for _, message := range messages {
-		fmt.Println(message.Date, message.Time)
-		go Reminder(&message)
+		fmt.Println(message.ID, message.Date, message.Time)
+		go Reminder(message)
 	}
 	return true
 }
@@ -262,9 +268,9 @@ func PostReminder(writer http.ResponseWriter, request *http.Request) {
 	message.Done = false
 	db.DB.Create(&message)
 
-	go Reminder(&message)
+	go Reminder(message)
 	writer.WriteHeader(http.StatusOK)
-	json.NewEncoder(writer).Encode(map[string]string{"msg": "success"})
+	json.NewEncoder(writer).Encode(map[string]string{"msg": "success", "id": fmt.Sprint(message.ID)})
 }
 
 type MessageID struct {
