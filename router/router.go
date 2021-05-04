@@ -19,6 +19,8 @@ func SetupRouter() *http.ServeMux {
 	fmt.Println("[POST]\t/reminder/")
 	mux.HandleFunc("/reminder/delete/", middleware.Timer(controller.DeleteReminder))
 	fmt.Println("[POST]\t/reminder/delete/")
+	mux.HandleFunc("/testIP/", middleware.Timer(controller.IPTest))
+	fmt.Println("[POST]\t/testIP/")
 	// mux.HandleFunc("/test/", middleware.Timer(controller.TestTicker))
 	// fmt.Println("[GET]\t/test/")
 

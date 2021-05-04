@@ -46,12 +46,12 @@ func init() {
 	}
 
 	everyMidnight := time.NewTicker(time.Duration(hour)*time.Hour + time.Duration(minute)*time.Minute)
-	defer everyMidnight.Stop()
 	go func() {
 		for {
 			select {
 			case <-everyMidnight.C:
-				fmt.Println("first")
+				fmt.Println("first Reminder call!")
+				controller.GetReminders()
 				go Ticker24Hour()
 				return
 			}
