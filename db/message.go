@@ -1,6 +1,8 @@
 package db
 
 import (
+	"time"
+
 	"gorm.io/gorm"
 )
 
@@ -13,4 +15,12 @@ type Message struct {
 	Time     string `gorm:"type:varchar(16);not null"`
 	Text     string `gorm:"type:varchar(512)"`
 	Done     bool   `gorm:"default:false"`
+	Booking  uint64 `gorm:"unique"`
+}
+
+type AlarmStatus struct {
+	id    uint
+	date  *time.Time
+	count uint
+	salon uint
 }

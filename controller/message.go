@@ -27,6 +27,7 @@ type RequestMessageForm struct {
 	Salon    uint64 `json:"salon"`
 	Date     string `json:"date"`
 	Time     string `json:"time"`
+	Booking  uint64 `json:"booking"`
 }
 
 type MsgResponse struct {
@@ -45,6 +46,12 @@ func NoticeMessage(w http.ResponseWriter, r *http.Request) {
 
 	if err := json.NewDecoder(r.Body).Decode(&msg); err != nil {
 		log.Println(err)
+		return
+	}
+
+	if err := MessageCountDecrease(fmt.Sprint(msg.Salon)); err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]string{"msg": "credit is zero"})
 		return
 	}
 
@@ -82,7 +89,6 @@ func NoticeMessage(w http.ResponseWriter, r *http.Request) {
 		log.Println(err)
 		return
 	}
-
 	defer msg_response.Body.Close()
 
 	body, err := ioutil.ReadAll(msg_response.Body)
@@ -100,6 +106,7 @@ func NoticeMessage(w http.ResponseWriter, r *http.Request) {
 		json.NewEncoder(w).Encode(map[string]string{"msg": "fail"})
 		return
 	}
+
 	var message db.Message
 	message.Phone = msg.Phone
 	message.Template = msg.Template
@@ -112,19 +119,6 @@ func NoticeMessage(w http.ResponseWriter, r *http.Request) {
 
 	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(map[string]string{"msg": "success"})
-}
-func Boom(s string) {
-	boom := time.After(10 * time.Second)
-	for {
-		select {
-		case <-boom:
-			fmt.Println(s)
-			return
-		default:
-			fmt.Print(".")
-			time.Sleep(2 * time.Second)
-		}
-	}
 }
 
 func Reminder(message db.Message) bool {
@@ -157,13 +151,13 @@ func Reminder(message db.Message) bool {
 	}
 
 	ticker := time.NewTicker(duration)
-	MessageStopper[message.ID] = make(chan bool)
+	MessageStopper[message.Booking] = make(chan bool)
+	fmt.Println("map: ", MessageStopper)
 	fmt.Println(message.ID, time.Now().Add(duration))
 	for {
 		select {
 		case <-ticker.C:
 			fmt.Println("send")
-
 			URL := "/request/kakao.json"
 			data, _ := json.Marshal(map[string]string{
 				"service":  strconv.Itoa(config.MESSAGE_NOTICE_SERVICE_NUMBER),
@@ -171,6 +165,9 @@ func Reminder(message db.Message) bool {
 				"mobile":   message.Phone,
 				"template": message.Template,
 			})
+			if err := MessageCountDecrease(fmt.Sprint(message.Salon)); err != nil {
+				return false
+			}
 			req, err := http.NewRequest("POST", config.MESSAGE_API_URL+URL, bytes.NewBuffer(data))
 			if err != nil {
 				log.Println(err)
@@ -209,13 +206,14 @@ func Reminder(message db.Message) bool {
 				message.Done = true
 				db.DB.Save(&message)
 			}
-
+			delete(MessageStopper, message.Booking)
 			return true
-		case <-MessageStopper[message.ID]:
+		case <-MessageStopper[message.Booking]:
 			fmt.Println("map: ", MessageStopper)
-			fmt.Println("[Log] ", message.ID, "stopped")
-			close(MessageStopper[message.ID])
-			delete(MessageStopper, message.ID)
+			fmt.Println("[Log] ", message.Booking, "stopped")
+			close(MessageStopper[message.Booking])
+			delete(MessageStopper, message.Booking)
+			db.DB.Unscoped().Delete(&message)
 			fmt.Println("map: ", MessageStopper)
 			return false
 		}
@@ -265,16 +263,21 @@ func PostReminder(writer http.ResponseWriter, request *http.Request) {
 	message.Date = msg.Date
 	message.Time = msg.Time
 	message.Text = Text
+	message.Booking = msg.Booking
 	message.Done = false
-	db.DB.Create(&message)
+	if err := db.DB.Create(&message).Error; err != nil {
+		writer.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(writer).Encode((map[string]string{"msg": fmt.Sprint(err)}))
+		return
+	}
 
 	go Reminder(message)
 	writer.WriteHeader(http.StatusOK)
 	json.NewEncoder(writer).Encode(map[string]string{"msg": "success", "id": fmt.Sprint(message.ID)})
 }
 
-type MessageID struct {
-	ID uint `jons:"id"`
+type MessageBooking struct {
+	Booking uint64 `jons:"booking"`
 }
 
 func DeleteReminder(writer http.ResponseWriter, request *http.Request) {
@@ -283,13 +286,16 @@ func DeleteReminder(writer http.ResponseWriter, request *http.Request) {
 		fmt.Fprintf(writer, "invalid_http_method")
 		return
 	}
-	var messageID MessageID
+	var messageBooking MessageBooking
 
-	if err := json.NewDecoder(request.Body).Decode(&messageID); err != nil {
+	if err := json.NewDecoder(request.Body).Decode(&messageBooking); err != nil {
 		log.Println(err)
 		return
 	}
-	MessageStopper[messageID.ID] <- true
+	if channel, ok := MessageStopper[messageBooking.Booking]; ok {
+		channel <- true
+	}
+	// delete(MessageStopper, messageBooking.Booking)
 
 	json.NewEncoder(writer).Encode(map[string]string{"msg": "success"})
 }
